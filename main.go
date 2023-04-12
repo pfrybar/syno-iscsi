@@ -92,7 +92,7 @@ func main() {
 
 var app = &cli.App{
 	Name:                   "syno-iscsi",
-	Version:                "v0.1.0",
+	Version:                "v0.2.0",
 	Usage:                  "CLI for interacting with Synology iSCSI storage",
 	Writer:                 out,
 	UseShortOptionHandling: true,
