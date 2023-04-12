@@ -1,5 +1,9 @@
 ## syno-iscsi
 
+[![Build status](https://img.shields.io/github/actions/workflow/status/pfrybar/syno-iscsi/go.yml)](https://github.com/pfrybar/syno-iscsi/actions?workflow=go)
+[![Software License](https://img.shields.io/github/license/pfrybar/syno-iscsi)](/LICENSE)
+[![Release](https://img.shields.io/github/v/release/pfrybar/syno-iscsi)](https://github.com/pfrybar/syno-iscsi/releases/latest)
+
 CLI for interacting with Synology iSCSI storage
 
 ### Description
