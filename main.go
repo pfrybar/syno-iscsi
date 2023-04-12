@@ -52,18 +52,19 @@ const (
 	lunReclaimThinMsg        = "--reclaim can only be used with --thin"
 	lunInvalidNameMsg        = "invalid LUN name, must consist of a-z, A-Z, 0-9, and hyphens (-)"
 	lunInvalidSizeMsg        = "invalid LUN size, must be a positive integer"
-	volumeNotFoundMsg        = "could not find volume with path: %s"
-	lunNotFoundMsg           = "could not find LUN with name: %s"
-	targetNotFoundMsg        = "could not find target with name: %s"
 	volumeNotEnoughSpaceMsg  = "not enough space, %s has %d GiB free"
 	lunCannotDecreaseSizeMsg = "LUN cannot decrease in size"
 	targetActiveSessionMsg   = "There are active sessions, please logout of all clients before continuing (force delete with -f)"
 	targetForceDeleteMsg     = "Force deleting even though there are active sessions"
 
+	volumeNotFoundMsg = "could not find volume with path: %s"
+	lunNotFoundMsg    = "could not find LUN with name: %s"
+	targetNotFoundMsg = "could not find target with name: %s"
+
 	lunCreatedMsg    = "LUN created successfully"
-	lunUpdatedMsg    = "LUN updated successfully"
+	lunMappedMsg     = "LUN mapped to the target successfully"
+	lunResizedMsg    = "LUN resized successfully"
 	lunDeletedMsg    = "LUN deleted successfully"
-	lunMappedMsg     = "LUN was mapped to the target successfully"
 	targetCreatedMsg = "Target created successfully"
 	targetDeletedMsg = "Target deleted successfully"
 )
@@ -138,9 +139,9 @@ var app = &cli.App{
 		},
 		{
 			Name:  "lun",
-			Usage: "LUN management (list, create, delete, map)",
+			Usage: "LUN management (list, create, map, resize, delete)",
 			Subcommands: []*cli.Command{
-				&lunListCmd, &lunCreateCmd, &lunResizeCmd, &lunDeleteCmd, &lunMapCmd,
+				&lunListCmd, &lunCreateCmd, &lunMapCmd, &lunResizeCmd, &lunDeleteCmd,
 			},
 		},
 		{
@@ -274,7 +275,7 @@ var lunCreateCmd = cli.Command{
 		}
 
 		name := ctx.Args().Get(0)
-		volumeName := ctx.Args().Get(1)
+		volumePath := ctx.Args().Get(1)
 		sizeStr := ctx.Args().Get(2)
 
 		if !lunRegex.MatchString(name) {
@@ -292,7 +293,7 @@ var lunCreateCmd = cli.Command{
 		}
 		defer logout()
 
-		volume, err := getVolumeByPath(ctx, volumeName)
+		volume, err := getVolumeByPath(ctx, volumePath)
 		if err != nil {
 			return err
 		}
@@ -303,7 +304,7 @@ var lunCreateCmd = cli.Command{
 		}
 
 		if size > free {
-			message := fmt.Sprintf(volumeNotEnoughSpaceMsg, volumeName, bytesToGiB(free))
+			message := fmt.Sprintf(volumeNotEnoughSpaceMsg, volumePath, bytesToGiB(free))
 			return &errApp{message}
 		}
 
@@ -320,7 +321,7 @@ var lunCreateCmd = cli.Command{
 		lunType := syno.GetLunType(volume.FsType, thin)
 		spec := webapi.LunCreateSpec{
 			Name:       name,
-			Location:   volumeName,
+			Location:   volumePath,
 			Size:       int64(size),
 			Type:       lunType,
 			DevAttribs: devAttributes,
@@ -332,6 +333,45 @@ var lunCreateCmd = cli.Command{
 		}
 
 		fmt.Fprintln(out, lunCreatedMsg)
+
+		return nil
+	},
+}
+
+// TODO: can't have unmap lun command, no method in webapi.DSM
+var lunMapCmd = cli.Command{
+	Name:      "map",
+	Usage:     "map a LUN to a target",
+	ArgsUsage: "<lun-name> <target-name>",
+	Action: func(ctx *cli.Context) error {
+		if err := verifyArgs(2, ctx); err != nil {
+			return err
+		}
+
+		lunName := ctx.Args().Get(0)
+		targetName := ctx.Args().Get(1)
+
+		if err := initAndLogin(ctx); err != nil {
+			return err
+		}
+		defer logout()
+
+		lun, err := getLunByName(ctx, lunName)
+		if err != nil {
+			return err
+		}
+
+		target, err := getTargetByName(ctx, targetName)
+		if err != nil {
+			return err
+		}
+
+		targetId := strconv.Itoa(target.TargetId)
+		if err := synoClient.LunMapTarget([]string{targetId}, lun.Uuid); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(out, lunMappedMsg)
 
 		return nil
 	},
@@ -393,7 +433,7 @@ var lunResizeCmd = cli.Command{
 			return err
 		}
 
-		fmt.Fprintln(out, lunUpdatedMsg)
+		fmt.Fprintln(out, lunResizedMsg)
 
 		return nil
 	},
@@ -470,45 +510,6 @@ var lunDeleteCmd = cli.Command{
 		}
 
 		fmt.Fprintln(out, lunDeletedMsg)
-
-		return nil
-	},
-}
-
-// TODO: can't have unmap lun command, no method in webapi.DSM
-var lunMapCmd = cli.Command{
-	Name:      "map",
-	Usage:     "map a LUN to a target",
-	ArgsUsage: "<lun-name> <target-name>",
-	Action: func(ctx *cli.Context) error {
-		if err := verifyArgs(2, ctx); err != nil {
-			return err
-		}
-
-		lunName := ctx.Args().Get(0)
-		targetName := ctx.Args().Get(1)
-
-		if err := initAndLogin(ctx); err != nil {
-			return err
-		}
-		defer logout()
-
-		lun, err := getLunByName(ctx, lunName)
-		if err != nil {
-			return err
-		}
-
-		target, err := getTargetByName(ctx, targetName)
-		if err != nil {
-			return err
-		}
-
-		targetId := strconv.Itoa(target.TargetId)
-		if err := synoClient.LunMapTarget([]string{targetId}, lun.Uuid); err != nil {
-			return err
-		}
-
-		fmt.Fprintln(out, lunMappedMsg)
 
 		return nil
 	},

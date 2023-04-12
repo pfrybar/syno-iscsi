@@ -11,9 +11,9 @@ type Client interface {
 	VolumeList() ([]webapi.VolInfo, error)
 	LunList() ([]webapi.LunInfo, error)
 	LunCreate(spec webapi.LunCreateSpec) (string, error)
+	LunMapTarget(targetIds []string, lunUuid string) error
 	LunUpdate(spec webapi.LunUpdateSpec) error
 	LunDelete(lunUuid string) error
-	LunMapTarget(targetIds []string, lunUuid string) error
 	TargetList() ([]webapi.TargetInfo, error)
 	TargetCreate(spec webapi.TargetCreateSpec) (string, error)
 	TargetDelete(targetName string) error // webapi.DSM incorrect, this should be targetId

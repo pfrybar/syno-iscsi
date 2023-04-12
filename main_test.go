@@ -442,6 +442,57 @@ var _ = Describe("Main", func() {
 		})
 	})
 
+	Describe("Mapping LUNs", func() {
+		It("returns an error with the wrong number of arguments", func() {
+			cmd := append(validCommand, "lun", "map", "lun1")
+			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 2, 1)))
+
+			cmd = append(validCommand, "lun", "map", "lun1", "target1", "nope")
+			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 2, 3)))
+		})
+
+		Context("with correct arguments", func() {
+			var foundTargetUuids []string
+			var foundLunUuid string
+
+			BeforeEach(func() {
+				foundTargetUuids = []string{}
+				foundLunUuid = ""
+				synoClient = &MockSynoClient{
+					lunList: func() ([]webapi.LunInfo, error) {
+						return []webapi.LunInfo{lun1, lun2}, nil
+					},
+					lunMapTarget: func(targetIds []string, lunUuid string) error {
+						foundTargetUuids = targetIds
+						foundLunUuid = lunUuid
+						return nil
+					},
+					targetList: func() ([]webapi.TargetInfo, error) {
+						return []webapi.TargetInfo{target1, target2}, nil
+					},
+				}
+			})
+
+			It("returns an error for missing LUN", func() {
+				cmd := append(validCommand, "lun", "map", "lun3", "target1")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunNotFoundMsg, "lun3")))
+			})
+
+			It("returns an error for missing target", func() {
+				cmd := append(validCommand, "lun", "map", "lun1", "target3")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(targetNotFoundMsg, "target3")))
+			})
+
+			It("maps LUN to the target", func() {
+				cmd := append(validCommand, "lun", "map", "lun1", "target1")
+				Expect(app.Run(cmd)).To(Succeed())
+				Expect(foundTargetUuids).To(Equal([]string{"1"}))
+				Expect(foundLunUuid).To(Equal(lun1.Uuid))
+				Expect(buffer.String()).To(Equal(lunMappedMsg + "\n"))
+			})
+		})
+	})
+
 	Describe("Resizing LUNs", func() {
 		It("returns an error with the wrong number of arguments", func() {
 			cmd := append(validCommand, "lun", "resize", "lun1")
@@ -496,7 +547,7 @@ var _ = Describe("Main", func() {
 				}
 				Expect(app.Run(cmd)).To(Succeed())
 				Expect(updateSpec).To(Equal(expectedSpec))
-				Expect(buffer.String()).To(Equal(lunUpdatedMsg + "\n"))
+				Expect(buffer.String()).To(Equal(lunResizedMsg + "\n"))
 			})
 		})
 	})
@@ -570,57 +621,6 @@ var _ = Describe("Main", func() {
 				Expect(app.Run(cmd)).To(Succeed())
 				Expect(uuid).To(Equal("c0416d61-e668-4fd9-86d7-7139c4fabd1d"))
 				Expect(buffer.String()).To(Equal(lunDeletedMsg + "\n"))
-			})
-		})
-	})
-
-	Describe("Mapping LUNs", func() {
-		It("returns an error with the wrong number of arguments", func() {
-			cmd := append(validCommand, "lun", "map", "lun1")
-			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 2, 1)))
-
-			cmd = append(validCommand, "lun", "map", "lun1", "target1", "nope")
-			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 2, 3)))
-		})
-
-		Context("with correct arguments", func() {
-			var foundTargetUuids []string
-			var foundLunUuid string
-
-			BeforeEach(func() {
-				foundTargetUuids = []string{}
-				foundLunUuid = ""
-				synoClient = &MockSynoClient{
-					lunList: func() ([]webapi.LunInfo, error) {
-						return []webapi.LunInfo{lun1, lun2}, nil
-					},
-					lunMapTarget: func(targetIds []string, lunUuid string) error {
-						foundTargetUuids = targetIds
-						foundLunUuid = lunUuid
-						return nil
-					},
-					targetList: func() ([]webapi.TargetInfo, error) {
-						return []webapi.TargetInfo{target1, target2}, nil
-					},
-				}
-			})
-
-			It("returns an error for missing LUN", func() {
-				cmd := append(validCommand, "lun", "map", "lun3", "target1")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunNotFoundMsg, "lun3")))
-			})
-
-			It("returns an error for missing target", func() {
-				cmd := append(validCommand, "lun", "map", "lun1", "target3")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(targetNotFoundMsg, "target3")))
-			})
-
-			It("maps LUN to the target", func() {
-				cmd := append(validCommand, "lun", "map", "lun1", "target1")
-				Expect(app.Run(cmd)).To(Succeed())
-				Expect(foundTargetUuids).To(Equal([]string{"1"}))
-				Expect(foundLunUuid).To(Equal(lun1.Uuid))
-				Expect(buffer.String()).To(Equal(lunMappedMsg + "\n"))
 			})
 		})
 	})
@@ -796,9 +796,9 @@ type MockSynoClient struct {
 	volumeList   func() ([]webapi.VolInfo, error)
 	lunList      func() ([]webapi.LunInfo, error)
 	lunCreate    func(spec webapi.LunCreateSpec) (string, error)
+	lunMapTarget func(targetIds []string, lunUuid string) error
 	lunUpdate    func(spec webapi.LunUpdateSpec) error
 	lunDelete    func(lunUuid string) error
-	lunMapTarget func(targetIds []string, lunUuid string) error
 	targetList   func() ([]webapi.TargetInfo, error)
 	targetCreate func(spec webapi.TargetCreateSpec) (string, error)
 	targetDelete func(targetName string) error
@@ -845,6 +845,13 @@ func (m *MockSynoClient) LunCreate(spec webapi.LunCreateSpec) (string, error) {
 	return "", nil
 }
 
+func (m *MockSynoClient) LunMapTarget(targetIds []string, lunUuid string) error {
+	if m.lunMapTarget != nil {
+		return m.lunMapTarget(targetIds, lunUuid)
+	}
+	return nil
+}
+
 func (m *MockSynoClient) LunUpdate(spec webapi.LunUpdateSpec) error {
 	if m.lunUpdate != nil {
 		return m.lunUpdate(spec)
@@ -856,13 +863,6 @@ func (m *MockSynoClient) LunUpdate(spec webapi.LunUpdateSpec) error {
 func (m *MockSynoClient) LunDelete(lunUuid string) error {
 	if m.lunDelete != nil {
 		return m.lunDelete((lunUuid))
-	}
-	return nil
-}
-
-func (m *MockSynoClient) LunMapTarget(targetIds []string, lunUuid string) error {
-	if m.lunMapTarget != nil {
-		return m.lunMapTarget(targetIds, lunUuid)
 	}
 	return nil
 }
