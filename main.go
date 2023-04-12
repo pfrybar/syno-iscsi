@@ -52,9 +52,9 @@ const (
 	lunReclaimThinMsg       = "--reclaim can only be used with --thin"
 	lunInvalidNameMsg       = "invalid LUN name, must consist of a-z, A-Z, 0-9, and hyphens (-)"
 	lunInvalidSizeMsg       = "invalid LUN size, must be a positive integer"
-	volumeCouldNotFindMsg   = "could not find volume with path: %s"
-	lunCouldNotFindMsg      = "could not find LUN with name: %s"
-	targetCouldNotFindMsg   = "could not find target with name: %s"
+	volumeNotFoundMsg       = "could not find volume with path: %s"
+	lunNotFoundMsg          = "could not find LUN with name: %s"
+	targetNotFoundMsg       = "could not find target with name: %s"
 	volumeNotEnoughSpaceMsg = "not enough space, %s has %d GiB free"
 	targetActiveSessionMsg  = "There are active sessions, please logout of all clients before continuing (force delete with -f)"
 	targetForceDeleteMsg    = "Force deleting even though there are active sessions"
@@ -698,7 +698,7 @@ func getVolumeByPath(ctx *cli.Context, path string) (*webapi.VolInfo, error) {
 		}
 	}
 
-	return nil, &errApp{fmt.Sprintf(volumeCouldNotFindMsg, path)}
+	return nil, &errApp{fmt.Sprintf(volumeNotFoundMsg, path)}
 }
 
 func getLunByName(ctx *cli.Context, name string) (*webapi.LunInfo, error) {
@@ -713,7 +713,7 @@ func getLunByName(ctx *cli.Context, name string) (*webapi.LunInfo, error) {
 		}
 	}
 
-	return nil, &errApp{fmt.Sprintf(lunCouldNotFindMsg, name)}
+	return nil, &errApp{fmt.Sprintf(lunNotFoundMsg, name)}
 }
 
 func getTargetByName(ctx *cli.Context, name string) (*webapi.TargetInfo, error) {
@@ -728,7 +728,7 @@ func getTargetByName(ctx *cli.Context, name string) (*webapi.TargetInfo, error) 
 		}
 	}
 
-	return nil, &errApp{fmt.Sprintf(targetCouldNotFindMsg, name)}
+	return nil, &errApp{fmt.Sprintf(targetNotFoundMsg, name)}
 }
 
 func scanLine() string {

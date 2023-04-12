@@ -356,7 +356,7 @@ var _ = Describe("Main", func() {
 
 			It("returns an error for missing volume", func() {
 				cmd := append(validCommand, "lun", "create", "lun1", "/vol3", "1")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeCouldNotFindMsg, "/vol3")))
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeNotFoundMsg, "/vol3")))
 			})
 
 			It("returns an error if volume does not have enough space", func() {
@@ -472,7 +472,7 @@ var _ = Describe("Main", func() {
 
 			It("returns an error for missing LUN", func() {
 				cmd := append(validCommand, "lun", "delete", "lun3")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunCouldNotFindMsg, "lun3")))
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunNotFoundMsg, "lun3")))
 			})
 
 			It("skips deletion if verification fails", func() {
@@ -548,12 +548,12 @@ var _ = Describe("Main", func() {
 
 			It("returns an error for missing LUN", func() {
 				cmd := append(validCommand, "lun", "map", "lun3", "target1")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunCouldNotFindMsg, "lun3")))
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunNotFoundMsg, "lun3")))
 			})
 
 			It("returns an error for missing target", func() {
 				cmd := append(validCommand, "lun", "map", "lun1", "target3")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(targetCouldNotFindMsg, "target3")))
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(targetNotFoundMsg, "target3")))
 			})
 
 			It("maps LUN to the target", func() {
@@ -666,7 +666,7 @@ var _ = Describe("Main", func() {
 
 			It("returns an error for missing target", func() {
 				cmd := append(validCommand, "target", "delete", "target3")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(targetCouldNotFindMsg, "target3")))
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(targetNotFoundMsg, "target3")))
 			})
 
 			It("skips deletion if verification fails", func() {
