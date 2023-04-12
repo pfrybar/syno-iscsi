@@ -442,6 +442,65 @@ var _ = Describe("Main", func() {
 		})
 	})
 
+	Describe("Resizing LUNs", func() {
+		It("returns an error with the wrong number of arguments", func() {
+			cmd := append(validCommand, "lun", "resize", "lun1")
+			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 2, 1)))
+
+			cmd = append(validCommand, "lun", "resize", "lun1", "7", "none")
+			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 2, 3)))
+		})
+
+		Context("with correct arguments", func() {
+			var updateSpec webapi.LunUpdateSpec
+
+			BeforeEach(func() {
+				updateSpec = webapi.LunUpdateSpec{}
+				synoClient = &MockSynoClient{
+					volumeList: func() ([]webapi.VolInfo, error) {
+						return []webapi.VolInfo{vol1, vol2}, nil
+					},
+					lunList: func() ([]webapi.LunInfo, error) {
+						return []webapi.LunInfo{lun1, lun2}, nil
+					},
+					lunUpdate: func(spec webapi.LunUpdateSpec) error {
+						updateSpec = spec
+						return nil
+					},
+				}
+			})
+
+			It("returns an error for missing lun", func() {
+				cmd := append(validCommand, "lun", "resize", "lun3", "7")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunNotFoundMsg, "lun3")))
+			})
+
+			It("returns an error if lun size decreases or remains the same", func() {
+				cmd := append(validCommand, "lun", "resize", "lun1", "5")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprint(lunCannotDecreaseSizeMsg)))
+
+				cmd = append(validCommand, "lun", "resize", "lun1", "2")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprint(lunCannotDecreaseSizeMsg)))
+			})
+
+			It("returns an error if volume does not have enough space", func() {
+				cmd := append(validCommand, "lun", "resize", "lun1", "15")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeNotEnoughSpaceMsg, "/vol1", 5)))
+			})
+
+			It("updates the size of the LUN", func() {
+				cmd := append(validCommand, "lun", "resize", "lun1", "10")
+				expectedSpec := webapi.LunUpdateSpec{
+					Uuid:    "c0416d61-e668-4fd9-86d7-7139c4fabd1d",
+					NewSize: 10 * gb,
+				}
+				Expect(app.Run(cmd)).To(Succeed())
+				Expect(updateSpec).To(Equal(expectedSpec))
+				Expect(buffer.String()).To(Equal(lunUpdatedMsg + "\n"))
+			})
+		})
+	})
+
 	Describe("Deleting LUNs", func() {
 		It("returns an error with the wrong number of arguments", func() {
 			cmd := append(validCommand, "lun", "delete")
@@ -737,6 +796,7 @@ type MockSynoClient struct {
 	volumeList   func() ([]webapi.VolInfo, error)
 	lunList      func() ([]webapi.LunInfo, error)
 	lunCreate    func(spec webapi.LunCreateSpec) (string, error)
+	lunUpdate    func(spec webapi.LunUpdateSpec) error
 	lunDelete    func(lunUuid string) error
 	lunMapTarget func(targetIds []string, lunUuid string) error
 	targetList   func() ([]webapi.TargetInfo, error)
@@ -783,6 +843,14 @@ func (m *MockSynoClient) LunCreate(spec webapi.LunCreateSpec) (string, error) {
 		return m.lunCreate(spec)
 	}
 	return "", nil
+}
+
+func (m *MockSynoClient) LunUpdate(spec webapi.LunUpdateSpec) error {
+	if m.lunUpdate != nil {
+		return m.lunUpdate(spec)
+	}
+
+	return nil
 }
 
 func (m *MockSynoClient) LunDelete(lunUuid string) error {

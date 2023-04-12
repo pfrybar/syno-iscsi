@@ -47,19 +47,21 @@ const (
 	passEnvVar  = "SYNO_PASS"
 	httpsEnvVar = "SYNO_HTTPS"
 
-	missingGlobalArgsMsg    = "the following global flag(s) are missing: %s"
-	notEnoughArgsMsg        = "invalid number of arguments, expected %d but got %d"
-	lunReclaimThinMsg       = "--reclaim can only be used with --thin"
-	lunInvalidNameMsg       = "invalid LUN name, must consist of a-z, A-Z, 0-9, and hyphens (-)"
-	lunInvalidSizeMsg       = "invalid LUN size, must be a positive integer"
-	volumeNotFoundMsg       = "could not find volume with path: %s"
-	lunNotFoundMsg          = "could not find LUN with name: %s"
-	targetNotFoundMsg       = "could not find target with name: %s"
-	volumeNotEnoughSpaceMsg = "not enough space, %s has %d GiB free"
-	targetActiveSessionMsg  = "There are active sessions, please logout of all clients before continuing (force delete with -f)"
-	targetForceDeleteMsg    = "Force deleting even though there are active sessions"
+	missingGlobalArgsMsg     = "the following global flag(s) are missing: %s"
+	notEnoughArgsMsg         = "invalid number of arguments, expected %d but got %d"
+	lunReclaimThinMsg        = "--reclaim can only be used with --thin"
+	lunInvalidNameMsg        = "invalid LUN name, must consist of a-z, A-Z, 0-9, and hyphens (-)"
+	lunInvalidSizeMsg        = "invalid LUN size, must be a positive integer"
+	volumeNotFoundMsg        = "could not find volume with path: %s"
+	lunNotFoundMsg           = "could not find LUN with name: %s"
+	targetNotFoundMsg        = "could not find target with name: %s"
+	volumeNotEnoughSpaceMsg  = "not enough space, %s has %d GiB free"
+	lunCannotDecreaseSizeMsg = "LUN cannot decrease in size"
+	targetActiveSessionMsg   = "There are active sessions, please logout of all clients before continuing (force delete with -f)"
+	targetForceDeleteMsg     = "Force deleting even though there are active sessions"
 
 	lunCreatedMsg    = "LUN created successfully"
+	lunUpdatedMsg    = "LUN updated successfully"
 	lunDeletedMsg    = "LUN deleted successfully"
 	lunMappedMsg     = "LUN was mapped to the target successfully"
 	targetCreatedMsg = "Target created successfully"
@@ -138,7 +140,7 @@ var app = &cli.App{
 			Name:  "lun",
 			Usage: "LUN management (list, create, delete, map)",
 			Subcommands: []*cli.Command{
-				&lunListCmd, &lunCreateCmd, &lunDeleteCmd, &lunMapCmd,
+				&lunListCmd, &lunCreateCmd, &lunResizeCmd, &lunDeleteCmd, &lunMapCmd,
 			},
 		},
 		{
@@ -330,6 +332,68 @@ var lunCreateCmd = cli.Command{
 		}
 
 		fmt.Fprintln(out, lunCreatedMsg)
+
+		return nil
+	},
+}
+
+var lunResizeCmd = cli.Command{
+	Name:      "resize",
+	Usage:     "resize LUN by name (can only be increased)",
+	ArgsUsage: "<name> <new-size-in-gb>",
+	Action: func(ctx *cli.Context) error {
+		if err := verifyArgs(2, ctx); err != nil {
+			return err
+		}
+
+		name := ctx.Args().Get(0)
+		sizeStr := ctx.Args().Get(1)
+
+		sizeGB, err := strconv.Atoi(sizeStr)
+		if err != nil || sizeGB <= 0 {
+			return &errApp{lunInvalidSizeMsg}
+		}
+		size := uint64(sizeGB) * gb
+
+		if err := initAndLogin(ctx); err != nil {
+			return err
+		}
+		defer logout()
+
+		lun, err := getLunByName(ctx, name)
+		if err != nil {
+			return err
+		}
+
+		if size <= lun.Size {
+			return &errApp{lunCannotDecreaseSizeMsg}
+		}
+
+		volume, err := getVolumeByPath(ctx, lun.Location)
+		if err != nil {
+			return err
+		}
+
+		free, err := strconv.ParseUint(volume.Free, 10, 64)
+		if err != nil {
+			return err
+		}
+
+		if (size - lun.Size) > free {
+			message := fmt.Sprintf(volumeNotEnoughSpaceMsg, lun.Location, bytesToGiB(free))
+			return &errApp{message}
+		}
+
+		spec := webapi.LunUpdateSpec{
+			Uuid:    lun.Uuid,
+			NewSize: size,
+		}
+
+		if err := synoClient.LunUpdate(spec); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(out, lunUpdatedMsg)
 
 		return nil
 	},
