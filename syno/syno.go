@@ -13,6 +13,7 @@ type Client interface {
 	LunCreate(spec webapi.LunCreateSpec) (string, error)
 	LunMapTarget(targetIds []string, lunUuid string) error
 	LunUpdate(spec webapi.LunUpdateSpec) error
+	LunClone(spec webapi.LunCloneSpec) (string, error)
 	LunDelete(lunUuid string) error
 	TargetList() ([]webapi.TargetInfo, error)
 	TargetCreate(spec webapi.TargetCreateSpec) (string, error)

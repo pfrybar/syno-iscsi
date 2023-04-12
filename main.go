@@ -64,6 +64,7 @@ const (
 	lunCreatedMsg    = "LUN created successfully"
 	lunMappedMsg     = "LUN mapped to the target successfully"
 	lunResizedMsg    = "LUN resized successfully"
+	lunClonedMsg     = "LUN cloned successfully"
 	lunDeletedMsg    = "LUN deleted successfully"
 	targetCreatedMsg = "Target created successfully"
 	targetDeletedMsg = "Target deleted successfully"
@@ -139,9 +140,9 @@ var app = &cli.App{
 		},
 		{
 			Name:  "lun",
-			Usage: "LUN management (list, create, map, resize, delete)",
+			Usage: "LUN management (list, create, map, resize, clone, delete)",
 			Subcommands: []*cli.Command{
-				&lunListCmd, &lunCreateCmd, &lunMapCmd, &lunResizeCmd, &lunDeleteCmd,
+				&lunListCmd, &lunCreateCmd, &lunMapCmd, &lunResizeCmd, &lunCloneCmd, &lunDeleteCmd,
 			},
 		},
 		{
@@ -434,6 +435,65 @@ var lunResizeCmd = cli.Command{
 		}
 
 		fmt.Fprintln(out, lunResizedMsg)
+
+		return nil
+	},
+}
+
+var lunCloneCmd = cli.Command{
+	Name:      "clone",
+	Usage:     "clone a LUN",
+	ArgsUsage: "<source-lun> <destination-lun> <volume>",
+	Action: func(ctx *cli.Context) error {
+		if err := verifyArgs(3, ctx); err != nil {
+			return err
+		}
+
+		srcLunName := ctx.Args().Get(0)
+		dstLunName := ctx.Args().Get(1)
+		volumePath := ctx.Args().Get(2)
+
+		if !lunRegex.MatchString(dstLunName) {
+			return &errApp{lunInvalidNameMsg}
+		}
+
+		if err := initAndLogin(ctx); err != nil {
+			return err
+		}
+		defer logout()
+
+		srcLun, err := getLunByName(ctx, srcLunName)
+		if err != nil {
+			return err
+		}
+
+		volume, err := getVolumeByPath(ctx, volumePath)
+		if err != nil {
+			return err
+		}
+
+		free, err := strconv.ParseUint(volume.Free, 10, 64)
+		if err != nil {
+			return err
+		}
+
+		if srcLun.Size > free {
+			message := fmt.Sprintf(volumeNotEnoughSpaceMsg, volumePath, bytesToGiB(free))
+			return &errApp{message}
+		}
+
+		spec := webapi.LunCloneSpec{
+			Name:       dstLunName,
+			SrcLunUuid: srcLun.Uuid,
+			Location:   volumePath,
+		}
+
+		_, err = synoClient.LunClone(spec)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintln(out, lunClonedMsg)
 
 		return nil
 	},

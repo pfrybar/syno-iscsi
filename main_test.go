@@ -31,6 +31,14 @@ var vol2 = webapi.VolInfo{
 	Free:   fmt.Sprint(5 * gb),
 }
 
+var vol3 = webapi.VolInfo{
+	Path:   "/vol3",
+	Status: "normal",
+	FsType: "btrfs",
+	Size:   fmt.Sprint(10 * gb),
+	Free:   fmt.Sprint(0),
+}
+
 var lun1 = webapi.LunInfo{
 	Name:     "lun1",
 	Uuid:     "c0416d61-e668-4fd9-86d7-7139c4fabd1d",
@@ -244,7 +252,7 @@ var _ = Describe("Main", func() {
 		It("returns the expected result", func() {
 			synoClient = &MockSynoClient{
 				volumeList: func() ([]webapi.VolInfo, error) {
-					return []webapi.VolInfo{vol1, vol2}, nil
+					return []webapi.VolInfo{vol1, vol2, vol3}, nil
 				},
 			}
 
@@ -254,18 +262,24 @@ var _ = Describe("Main", func() {
 			output := buffer.String()
 			lines := strings.Split(output, "\n")
 
-			Expect(lines).To(HaveLen(4))
+			Expect(lines).To(HaveLen(5))
 
 			line2 := lines[1]
-			line2Terms := []string{"vol1", "normal", "ext4", "10.00 GiB", "5.00 GiB"}
+			line2Terms := []string{"/vol1", "normal", "ext4", "10.00 GiB", "5.00 GiB"}
 			for _, term := range line2Terms {
 				Expect(line2).To(ContainSubstring(term))
 			}
 
 			line3 := lines[2]
-			line3Terms := []string{"vol2", "degraded", "btrfs", "5.00 GiB", "0 B"}
+			line3Terms := []string{"/vol2", "degraded", "btrfs", "5.00 GiB", "0 B"}
 			for _, term := range line3Terms {
 				Expect(line3).To(ContainSubstring(term))
+			}
+
+			line4 := lines[3]
+			line4Terms := []string{"/vol3", "normal", "btrfs", "10.00 GiB"}
+			for _, term := range line4Terms {
+				Expect(line4).To(ContainSubstring(term))
 			}
 		})
 	})
@@ -345,7 +359,7 @@ var _ = Describe("Main", func() {
 				createSpec = webapi.LunCreateSpec{}
 				synoClient = &MockSynoClient{
 					volumeList: func() ([]webapi.VolInfo, error) {
-						return []webapi.VolInfo{vol1, vol2}, nil
+						return []webapi.VolInfo{vol1, vol2, vol3}, nil
 					},
 					lunCreate: func(spec webapi.LunCreateSpec) (string, error) {
 						createSpec = spec
@@ -355,8 +369,8 @@ var _ = Describe("Main", func() {
 			})
 
 			It("returns an error for missing volume", func() {
-				cmd := append(validCommand, "lun", "create", "lun1", "/vol3", "1")
-				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeNotFoundMsg, "/vol3")))
+				cmd := append(validCommand, "lun", "create", "lun1", "/vol4", "1")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeNotFoundMsg, "/vol4")))
 			})
 
 			It("returns an error if volume does not have enough space", func() {
@@ -509,7 +523,7 @@ var _ = Describe("Main", func() {
 				updateSpec = webapi.LunUpdateSpec{}
 				synoClient = &MockSynoClient{
 					volumeList: func() ([]webapi.VolInfo, error) {
-						return []webapi.VolInfo{vol1, vol2}, nil
+						return []webapi.VolInfo{vol1, vol2, vol3}, nil
 					},
 					lunList: func() ([]webapi.LunInfo, error) {
 						return []webapi.LunInfo{lun1, lun2}, nil
@@ -548,6 +562,71 @@ var _ = Describe("Main", func() {
 				Expect(app.Run(cmd)).To(Succeed())
 				Expect(updateSpec).To(Equal(expectedSpec))
 				Expect(buffer.String()).To(Equal(lunResizedMsg + "\n"))
+			})
+		})
+	})
+
+	Describe("Cloning LUNs", func() {
+		It("returns an error with the wrong number of arguments", func() {
+			cmd := append(validCommand, "lun", "clone", "lun1", "lun3")
+			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 3, 2)))
+
+			cmd = append(validCommand, "lun", "clone", "lun1", "lun3", "/vol2", "nope")
+			Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(notEnoughArgsMsg, 3, 4)))
+		})
+
+		It("returns an error with an invalid name", func() {
+			cmd := append(validCommand, "lun", "clone", "lun1", "lun_3", "/vol2")
+			Expect(app.Run(cmd)).To(MatchError(lunInvalidNameMsg))
+
+			cmd = append(validCommand, "lun", "clone", "lun1", " ", "/vol2")
+			Expect(app.Run(cmd)).To(MatchError(lunInvalidNameMsg))
+		})
+
+		Context("with correct arguments", func() {
+			var cloneSpec webapi.LunCloneSpec
+
+			BeforeEach(func() {
+				cloneSpec = webapi.LunCloneSpec{}
+				synoClient = &MockSynoClient{
+					volumeList: func() ([]webapi.VolInfo, error) {
+						return []webapi.VolInfo{vol1, vol2, vol3}, nil
+					},
+					lunList: func() ([]webapi.LunInfo, error) {
+						return []webapi.LunInfo{lun1, lun2}, nil
+					},
+					lunClone: func(spec webapi.LunCloneSpec) (string, error) {
+						cloneSpec = spec
+						return "uuid", nil
+					},
+				}
+			})
+
+			It("returns an error for missing lun", func() {
+				cmd := append(validCommand, "lun", "clone", "lun3", "lun4", "/vol2")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(lunNotFoundMsg, "lun3")))
+			})
+
+			It("returns an error for missing volume", func() {
+				cmd := append(validCommand, "lun", "clone", "lun1", "lun3", "/vol4")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeNotFoundMsg, "/vol4")))
+			})
+
+			It("returns an error if volume does not have enough space", func() {
+				cmd := append(validCommand, "lun", "clone", "lun1", "lun3", "/vol3")
+				Expect(app.Run(cmd)).To(MatchError(fmt.Sprintf(volumeNotEnoughSpaceMsg, "/vol3", 0)))
+			})
+
+			It("clones the LUN", func() {
+				cmd := append(validCommand, "lun", "clone", "lun1", "lun3", "/vol2")
+				expectedSpec := webapi.LunCloneSpec{
+					Name:       "lun3",
+					SrcLunUuid: "c0416d61-e668-4fd9-86d7-7139c4fabd1d",
+					Location:   "/vol2",
+				}
+				Expect(app.Run(cmd)).To(Succeed())
+				Expect(cloneSpec).To(Equal(expectedSpec))
+				Expect(buffer.String()).To(Equal(lunClonedMsg + "\n"))
 			})
 		})
 	})
@@ -798,6 +877,7 @@ type MockSynoClient struct {
 	lunCreate    func(spec webapi.LunCreateSpec) (string, error)
 	lunMapTarget func(targetIds []string, lunUuid string) error
 	lunUpdate    func(spec webapi.LunUpdateSpec) error
+	lunClone     func(spec webapi.LunCloneSpec) (string, error)
 	lunDelete    func(lunUuid string) error
 	targetList   func() ([]webapi.TargetInfo, error)
 	targetCreate func(spec webapi.TargetCreateSpec) (string, error)
@@ -858,6 +938,14 @@ func (m *MockSynoClient) LunUpdate(spec webapi.LunUpdateSpec) error {
 	}
 
 	return nil
+}
+
+func (m *MockSynoClient) LunClone(spec webapi.LunCloneSpec) (string, error) {
+	if m.lunClone != nil {
+		return m.lunClone(spec)
+	}
+
+	return "", nil
 }
 
 func (m *MockSynoClient) LunDelete(lunUuid string) error {
